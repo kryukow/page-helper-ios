@@ -1,0 +1,10 @@
+{
+  "manifest_version": 2,
+  "name": "Page Helper",
+  "version": "0.1.0",
+  "description": "Перевод страницы через собственный ChatGPT Plus с заменой оригинала.",
+  "permissions": ["activeTab", "nativeMessaging"],
+  "background": {"scripts": ["background.js"], "persistent": false},
+  "browser_action": {"default_title": "Page Helper", "default_popup": "popup.html"},
+  "content_scripts": [{"matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle"}]
+}
