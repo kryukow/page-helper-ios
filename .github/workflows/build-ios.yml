@@ -16,6 +16,8 @@ jobs:
         run: python3 scripts/check_public.py
       - name: Install project generator
         run: brew install xcodegen
+      - name: Generate explicit app icon sizes
+        run: python3 scripts/prepare_icons.py
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Compile for iPhone without signing
