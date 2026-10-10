@@ -20,12 +20,15 @@ import UIKit
     private var source: String { context.inputText.map { String($0.characters) } ?? "" }
     var body: some View {
         VStack(spacing: 14) {
+            if busy {
+                PaperAssemblyLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if busy { ProgressView("Перевожу…") }
                     if !result.isEmpty { Text(result).textSelection(.enabled) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Повторить") { attempt += 1 } }
                 }.frame(maxWidth: .infinity, alignment: .leading)
+            }
             }
             HStack {
                 Button(copied ? "Скопировано" : "Копировать", systemImage: "doc.on.doc") { UIPasteboard.general.string = result; copied = true }.disabled(result.isEmpty || busy)
@@ -53,5 +56,48 @@ import UIKit
             guard source == text else { return }
             result = translated[0]
         } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+}
+
+private struct PaperAssemblyLoader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var started = Date()
+    private let mint = Color(red: 0.40, green: 0.88, blue: 0.70)
+
+    var body: some View {
+        VStack(spacing: 22) {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
+                let elapsed = max(0, timeline.date.timeIntervalSince(started))
+                let phase = reduceMotion ? 2.4 : elapsed.truncatingRemainder(dividingBy: 3.6)
+                Canvas { graphics, size in
+                    let origin = CGPoint(x: (size.width - 66) / 2, y: (size.height - 84) / 2)
+                    for row in 0..<14 {
+                        for column in 0..<11 {
+                            // Leave a folded corner in the assembled sheet.
+                            if row < 3 && column > 7 + row { continue }
+                            let order = (row * 7 + column * 11) % 37
+                            let delay = Double(order) * 0.030
+                            let progress = min(1, max(0, (phase - delay) / 0.80))
+                            let eased = 1 - pow(1 - progress, 3)
+                            let angle = Double(row * 11 + column) * 2.39996
+                            let distance = (1 - eased) * (24 + Double(order % 5) * 8)
+                            let x = origin.x + CGFloat(column * 6) + CGFloat(cos(angle) * distance)
+                            let y = origin.y + CGFloat(row * 6) + CGFloat(sin(angle) * distance)
+                            let fade = phase > 2.9 ? max(0, (3.6 - phase) / 0.7) : 1
+                            let rect = CGRect(x: x, y: y, width: 5.7, height: 5.7)
+                            graphics.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(mint.opacity((0.15 + 0.85 * progress) * fade)))
+                        }
+                    }
+                    let detailOpacity = min(1, max(0, (phase - 1.5) / 0.5)) * (phase > 2.9 ? max(0, (3.6 - phase) / 0.7) : 1)
+                    for line in 0..<3 {
+                        let width: CGFloat = line == 2 ? 26 : 42
+                        let rect = CGRect(x: origin.x + 12, y: origin.y + 36 + CGFloat(line * 12), width: width, height: 3)
+                        graphics.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(Color(red: 0.06, green: 0.30, blue: 0.24).opacity(detailOpacity)))
+                    }
+                }
+            }.frame(width: 150, height: 140).accessibilityHidden(true)
+            Text("Перевожу…").font(.callout).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
