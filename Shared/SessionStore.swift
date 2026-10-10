@@ -19,19 +19,11 @@ enum SessionStore {
     static let group = "group.com.kryukov.plustranslate"
     static let service = "PlusTranslate.ChatGPT"
     static func query() throws -> [String: Any] {
-        // Discover the actual signing prefix, without baking a team ID into public code.
-        var probe: [String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:service + ".prefix",kSecAttrAccount as String:"marker",kSecReturnAttributes as String:true]
-        var result: CFTypeRef?
-        var status=SecItemCopyMatching(probe as CFDictionary,&result)
-        if status==errSecItemNotFound {
-            probe[kSecValueData as String]=Data("not-a-secret".utf8)
-            probe[kSecAttrAccessible as String]=kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            status=SecItemAdd(probe as CFDictionary,&result)
-        }
-        guard status==errSecSuccess,let attributes=result as? [String:Any],let ownGroup=attributes[kSecAttrAccessGroup as String] as? String,let prefix=ownGroup.split(separator:".").first else{throw Failure.message("Не удалось проверить группу подписи (\(status)).")}
+        // Registered App Groups also grant a shared keychain access group.
+        _ = try defaults()
         return [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service, kSecAttrAccount as String: "session",
-         kSecAttrAccessGroup as String: String(prefix)+".com.kryukov.plustranslate.shared"]
+         kSecAttrAccessGroup as String: group]
     }
     static func load() throws -> Session? {
         var q = try query(); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne

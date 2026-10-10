@@ -1,5 +1,8 @@
 name: Build unsigned iPhone IPA
 on:
+  push:
+    branches: [main]
+    paths: ['App/**', 'Shared/**', 'Extension/**', 'WebExtension/**', 'project.yml']
   workflow_dispatch:
 permissions:
   contents: read
