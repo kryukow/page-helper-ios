@@ -2,7 +2,7 @@ name: Build unsigned iPhone IPA
 on:
   push:
     branches: [main]
-    paths: ['App/**', 'Shared/**', 'Extension/**', 'WebExtension/**', 'project.yml']
+    paths: ['App/**', 'Shared/**', 'Extension/**', 'TranslationExtension/**', 'WebExtension/**', 'project.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,6 +30,7 @@ jobs:
           mkdir -p build/package/Payload
           cp -R build/Build/Products/Release-iphoneos/PlusTranslate.app build/package/Payload/
           test -d build/package/Payload/PlusTranslate.app/PlugIns/SafariExtension.appex
+          test -d build/package/Payload/PlusTranslate.app/Extensions/TranslationExtension.appex
           cd build/package
           zip -qr ../PlusTranslate-unsigned.ipa Payload
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
