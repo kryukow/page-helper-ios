@@ -1,7 +1,7 @@
 (() => {
   if (globalThis.__plusTranslateInstalled) return;
   globalThis.__plusTranslateInstalled = true;
-  const originals = new Map();
+  const originals = new Map(), cache = new Map();
   let busy = false, translated = false, progress = {done: 0, total: 0, errors: 0}, generation = 0;
   const excluded = 'script,style,noscript,pre,code,textarea,input,select,[contenteditable],[translate="no"],[data-plus-translate-ui]';
   const slots = element => {
@@ -52,32 +52,52 @@
     if(group.length)batches.push(group);
     busy=true;progress={done:0,total:elements.length,errors:0};renderButton();const current=++generation;
     try {
-      for (const batch of batches) {
-        if(current!==generation)break;
-        const response = await browser.runtime.sendMessage({action:'translate',segments:batch.map(b=>b.html)});
-        if(current!==generation)break;
-        if(response?.error)throw Error(response.error);
-        if(!Array.isArray(response?.translations)||response.translations.length!==batch.length)throw Error('Неверная структура ответа.');
-        batch.forEach((item,index)=>{if(apply(item.element,response.translations[index],item.html))progress.done++;else progress.errors++;});
-        translated=originals.size>0; renderButton();
+      let next=0;
+      async function worker() {
+        while(next<batches.length && current===generation) {
+          const batch=batches[next++];
+          const missing=batch.filter(item=>!cache.has(item.html));
+          if(missing.length) {
+            let response;
+            for(let attempt=0;attempt<2;attempt++) {
+              response=await browser.runtime.sendMessage({action:'translate',segments:missing.map(b=>b.html)});
+              response=response?.message ?? response;
+              if(response?.error)throw Error(response.error);
+              if(Array.isArray(response?.translations)&&response.translations.length===missing.length&&response.translations.every(v=>typeof v==='string'))break;
+              response=null;
+            }
+            if(!response)throw Error('Расширение не вернуло перевод. Попробуй снова.');
+            if(current!==generation)return;
+            missing.forEach((item,i)=>cache.set(item.html,response.translations[i]));
+
+            batch.forEach(item=>{const html=cache.get(item.html) ?? response.translations[missing.indexOf(item)];if(typeof html==='string'&&apply(item.element,html,item.html))progress.done++;else progress.errors++;});
+          } else {
+            batch.forEach(item=>{if(apply(item.element,cache.get(item.html),item.html))progress.done++;else progress.errors++;});
+          }
+          translated=originals.size>0;renderButton();
+        }
       }
+      // Two requests overlap; cancellation prevents late writes after restore/errors.
+      const jobs=await Promise.allSettled([worker(),worker()]);
+      const failed=jobs.find(job=>job.status==='rejected');
+      if(failed)throw failed.reason;
       return {translated,progress};
-    } finally {busy=false;renderButton();}
+    } finally {busy=false;if(cache.size>500)cache.clear();renderButton();}
   }
   // Isolated styles keep the page layout and the button independent.
   const host = document.createElement('div');
   host.setAttribute('data-plus-translate-ui', '');
-  host.style.cssText = 'all:initial!important;position:fixed!important;right:12px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
+  host.style.cssText = 'all:initial!important;position:fixed!important;right:-10px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
   const shadow = host.attachShadow({mode:'closed'});
   shadow.innerHTML = `<style>
-    button{box-sizing:border-box;min-width:48px;min-height:48px;padding:10px;border:1px solid #ffffff66;border-radius:24px;background:#153b39;color:#b9ffdf;box-shadow:0 3px 14px #0005;font:600 16px system-ui;cursor:pointer;touch-action:none}
+    button{box-sizing:border-box;width:54px;height:44px;padding:6px 12px 6px 6px;border:0;border-radius:24px 0 0 24px;background:rgba(30,67,60,.62);color:#e0fff0;box-shadow:0 2px 8px #0002;font:600 14px system-ui;cursor:pointer;touch-action:none}
     button:disabled{opacity:.85;cursor:progress}button:focus-visible{outline:3px solid #fff}
-    .error{position:absolute;right:0;top:56px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
+    .error{position:absolute;right:16px;top:50px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
   </style><button type="button" aria-label="Перевести страницу">A↔Я</button><div class="error" role="alert" hidden></div>`;
   const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
   function renderButton() {
     button.disabled=busy;
-    button.textContent=busy ? `${progress.done}/${progress.total}` : translated ? '↶' : 'A↔Я';
+    button.textContent=busy ? `${progress.total?Math.round(progress.done/progress.total*100):0}%` : translated ? '↶' : 'A↔Я';
     const label=busy ? `Перевожу: ${progress.done} из ${progress.total}` : translated ? 'Показать оригинал' : 'Перевести страницу';
     button.setAttribute('aria-label', label);button.title=label;
     error.textContent=progress.error || '';error.hidden=!progress.error;
