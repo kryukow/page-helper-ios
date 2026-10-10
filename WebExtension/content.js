@@ -38,7 +38,7 @@
     for (const snapshot of originals.values()) for (const item of snapshot) {
       if (item.node.isConnected && item.node.data === item.translation) item.node.data = item.original;
     }
-    originals.clear(); translated = false;
+    originals.clear(); translated = false; renderButton();
   }
   async function translate() {
     if (busy) return {busy, progress};
@@ -50,7 +50,7 @@
       group.push({element,html});size += html.length;
     }
     if(group.length)batches.push(group);
-    busy=true;progress={done:0,total:elements.length,errors:0};const current=++generation;
+    busy=true;progress={done:0,total:elements.length,errors:0};renderButton();const current=++generation;
     try {
       for (const batch of batches) {
         if(current!==generation)break;
@@ -59,17 +59,55 @@
         if(response?.error)throw Error(response.error);
         if(!Array.isArray(response?.translations)||response.translations.length!==batch.length)throw Error('Неверная структура ответа.');
         batch.forEach((item,index)=>{if(apply(item.element,response.translations[index],item.html))progress.done++;else progress.errors++;});
-        translated=originals.size>0;
+        translated=originals.size>0; renderButton();
       }
       return {translated,progress};
-    } finally {busy=false;}
+    } finally {busy=false;renderButton();}
   }
+  // Isolated styles keep the page layout and the button independent.
+  const host = document.createElement('div');
+  host.setAttribute('data-plus-translate-ui', '');
+  host.style.cssText = 'all:initial!important;position:fixed!important;right:12px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
+  const shadow = host.attachShadow({mode:'closed'});
+  shadow.innerHTML = `<style>
+    button{box-sizing:border-box;min-width:48px;min-height:48px;padding:10px;border:1px solid #ffffff66;border-radius:24px;background:#153b39;color:#b9ffdf;box-shadow:0 3px 14px #0005;font:600 16px system-ui;cursor:pointer;touch-action:none}
+    button:disabled{opacity:.85;cursor:progress}button:focus-visible{outline:3px solid #fff}
+    .error{position:absolute;right:0;top:56px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
+  </style><button type="button" aria-label="Перевести страницу">A↔Я</button><div class="error" role="alert" hidden></div>`;
+  const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
+  function renderButton() {
+    button.disabled=busy;
+    button.textContent=busy ? `${progress.done}/${progress.total}` : translated ? '↶' : 'A↔Я';
+    const label=busy ? `Перевожу: ${progress.done} из ${progress.total}` : translated ? 'Показать оригинал' : 'Перевести страницу';
+    button.setAttribute('aria-label', label);button.title=label;
+    error.textContent=progress.error || '';error.hidden=!progress.error;
+  }
+  let pointer=null, suppressClick=false;
+  button.addEventListener('pointerdown', e=>{
+    pointer={id:e.pointerId,x:e.clientX,y:e.clientY,top:host.getBoundingClientRect().top,moved:false};
+    button.setPointerCapture(e.pointerId);
+  });
+  button.addEventListener('pointermove', e=>{
+    if(!pointer || pointer.id!==e.pointerId)return;
+    if(Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y)>8)pointer.moved=true;
+    if(pointer.moved)host.style.setProperty('top', `${Math.max(8,Math.min(innerHeight-64,pointer.top+e.clientY-pointer.y))}px`, 'important');
+  });
+  button.addEventListener('pointerup',()=>{suppressClick=Boolean(pointer?.moved);pointer=null;});
+  button.addEventListener('pointercancel',()=>{pointer=null;suppressClick=true;});
+  button.addEventListener('click',()=>{
+    if(suppressClick){suppressClick=false;return;}
+    if(busy)return;
+    if(translated){restore();progress.error=null;renderButton();}
+    else translate().catch(e=>{progress.error=e.message;renderButton();});
+  });
+  document.documentElement.append(host);
+  renderButton();
   browser.runtime.onMessage.addListener(message => {
     if(message.action==='pageStatus')return Promise.resolve({busy,translated,progress});
     if(message.action==='restore'){restore();return Promise.resolve({translated:false,progress});}
     if(message.action==='translatePage'){
       // Reply immediately; closing the popup must not stop translation.
-      translate().catch(e=>{progress.error=e.message;});return Promise.resolve({started:true});
+      translate().catch(e=>{progress.error=e.message;renderButton();});return Promise.resolve({started:true});
     }
   });
 })();
