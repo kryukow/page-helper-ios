@@ -19,6 +19,10 @@ jobs:
           mkdir -p build
           swiftc Shared/TranslationTextStream.swift scripts/test_translation_stream.swift -o build/stream-tests
           build/stream-tests
+      - name: Test Safari native progress and cancellation
+        run: |
+          swiftc Extension/SafariStreamCoordinator.swift scripts/test_safari_coordinator.swift -o build/safari-stream-tests
+          build/safari-stream-tests
       - name: Install project generator
         run: brew install xcodegen
       - name: Generate explicit app icon sizes

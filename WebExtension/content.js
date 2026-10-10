@@ -1,88 +1,81 @@
 (() => {
   if (globalThis.__plusTranslateInstalled) return;
   globalThis.__plusTranslateInstalled = true;
-  const originals = new Map(), cache = new Map();
-  let busy = false, translated = false, progress = {done: 0, total: 0, errors: 0}, generation = 0;
-  const excluded = 'script,style,noscript,pre,code,textarea,input,select,[contenteditable],[translate="no"],[data-plus-translate-ui]';
-  const slots = element => {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    const list = []; let node;
-    while ((node = walker.nextNode())) if (node.data.trim()) list.push(node);
-    return list;
-  };
-  const shape = element => [...element.querySelectorAll('*')].map(node => [node.tagName,[...node.attributes].map(a => [a.name,a.value]).sort()]);
+  const originals = new Map(), cache = new Map(), ports = new Map();
+  let activeModel='', busy=false, translated=false, generation=0;
+  let progress={done:0,total:0,errors:0};
+  const excluded='script,style,noscript,pre,code,textarea,input,select,svg,math,iframe,[contenteditable],[translate="no"],[aria-hidden="true"],[data-plus-translate-ui]';
   function candidates() {
-    const list = [], seen = new Set();
-    const eligible = e => !e.closest(excluded) && !e.querySelector(excluded) && e.getClientRects().length && e.textContent.trim().length >= 2 && e.innerHTML.length <= 7000;
-    const add = e => { if (eligible(e) && ![...seen].some(p => p.contains(e) || e.contains(p))) { list.push(e); seen.add(e); } };
-    document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,button,label,figcaption').forEach(e => {
-      if (!e.querySelector('p,h1,h2,h3,h4,h5,h6,li,td,th,button,label,figcaption')) add(e);
-    });
-    document.querySelectorAll('a,span,div').forEach(e => { if (!e.children.length || [...e.children].every(c => ['B','STRONG','I','EM','SMALL','BR'].includes(c.tagName))) add(e); });
-    return list;
+    const nodes=[],walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT);let node;
+    while((node=walker.nextNode())){
+      const parent=node.parentElement;
+      if(!parent||parent.closest(excluded)||!parent.getClientRects().length||!/[\p{L}]/u.test(node.data)||new TextEncoder().encode(node.data).length>20000)continue;
+      nodes.push({node,original:node.data});
+    }
+    return nodes;
   }
-  function apply(element, html, originalHTML) {
-    if (!element.isConnected || element.innerHTML !== originalHTML) return false;
-    const template = document.createElement('template'); template.innerHTML = html;
-    const holder = document.createElement('div'); holder.append(template.content);
-    if (JSON.stringify(shape(element)) !== JSON.stringify(shape(holder))) return false;
-    const before = slots(element), after = slots(holder);
-    if (before.length !== after.length) return false;
-    const snapshot = before.map(n => ({node:n, original:n.data, translation:after[before.indexOf(n)].data}));
-    originals.set(element, snapshot);
-    for (const item of snapshot) item.node.data = item.translation;
-    return true;
+  function write(item,text,complete=false) {
+    const saved=originals.get(item.node);
+    if(!item.node.isConnected||item.node.data!==(saved?saved.translation:item.original))return false;
+    const prefix=item.original.match(/^\s*/)[0],suffix=item.original.match(/\s*$/)[0];
+    const translation=prefix+(complete?text.trim():text.trimStart())+(complete?suffix:'');
+    originals.set(item.node,{original:item.original,translation});item.node.data=translation;return true;
+  }
+  function rollback(items) {
+    for(const item of items){const saved=originals.get(item.node);if(saved){if(item.node.isConnected&&item.node.data===saved.translation)item.node.data=saved.original;originals.delete(item.node);}}
   }
   function restore() {
     generation++;
-    for (const snapshot of originals.values()) for (const item of snapshot) {
-      if (item.node.isConnected && item.node.data === item.translation) item.node.data = item.original;
-    }
-    originals.clear(); translated = false; renderButton();
+    for(const [port,cancel] of [...ports]){try{port.postMessage({type:'cancel'});}catch{}cancel();}
+    ports.clear();
+    for(const [node,saved] of originals){if(node.isConnected&&node.data===saved.translation)node.data=saved.original;}
+    originals.clear();translated=false;progress={done:0,total:0,errors:0};renderButton();
+  }
+  function streamBatch(items,current) {
+    return new Promise((resolve,reject)=>{
+      const port=browser.runtime.connect({name:'page-helper-stream'});let finished=false;
+      const fail=error=>{if(finished)return;finished=true;rollback(items);ports.delete(port);port.disconnect();reject(error);};
+      ports.set(port,()=>fail(Error('Перевод отменён.')));
+      port.onDisconnect.addListener(()=>{if(!finished)fail(Error(current===generation?'Перевод прервался. Попробуй ещё раз.':'Перевод отменён.'));});
+      port.onMessage.addListener(event=>{
+        if(finished)return;
+        if(current!==generation){fail(Error('Перевод отменён.'));return;}
+        if(event.type==='error'){fail(Error(event.error||'Не удалось перевести.'));return;}
+        if(event.type==='update'){
+          if(!Number.isInteger(event.index)||event.index<0||event.index>=items.length||typeof event.text!=='string'){fail(Error('Некорректный поток перевода.'));return;}
+          write(items[event.index],event.text,event.complete);translated=originals.size>0;renderButton();
+        }
+        if(event.type==='done'){
+          if(!Array.isArray(event.translations)||event.translations.length!==items.length||!event.translations.every(s=>typeof s==='string')){fail(Error('Перевод не завершён.'));return;}
+          event.translations.forEach((text,i)=>{cache.set(items[i].original,text);if(write(items[i],text,true))progress.done++;else progress.errors++;});
+          finished=true;ports.delete(port);port.disconnect();translated=originals.size>0;renderButton();resolve();
+        }
+      });
+      port.postMessage({type:'translate',segments:items.map(item=>item.original)});
+    });
   }
   async function translate() {
-    if (busy) return {busy, progress};
-    if (translated) return {translated, progress};
-    const elements = candidates(), batches = [];let group=[], size=0;
-    for (const element of elements) {
-      const html = element.innerHTML;
-      if (group.length >= 12 || size + html.length > 3500) { if(group.length)batches.push(group);group=[];size=0; }
-      group.push({element,html});size += html.length;
-    }
-    if(group.length)batches.push(group);
-    busy=true;progress={done:0,total:elements.length,errors:0};renderButton();const current=++generation;
-    try {
-      let next=0;
-      async function worker() {
-        while(next<batches.length && current===generation) {
-          const batch=batches[next++];
-          const missing=batch.filter(item=>!cache.has(item.html));
-          if(missing.length) {
-            let response;
-            for(let attempt=0;attempt<2;attempt++) {
-              response=await browser.runtime.sendMessage({action:'translate',segments:missing.map(b=>b.html)});
-              response=response?.message ?? response;
-              if(response?.error)throw Error(response.error);
-              if(Array.isArray(response?.translations)&&response.translations.length===missing.length&&response.translations.every(v=>typeof v==='string'))break;
-              response=null;
-            }
-            if(!response)throw Error('Расширение не вернуло перевод. Попробуй снова.');
-            if(current!==generation)return;
-            missing.forEach((item,i)=>cache.set(item.html,response.translations[i]));
-
-            batch.forEach(item=>{const html=cache.get(item.html) ?? response.translations[missing.indexOf(item)];if(typeof html==='string'&&apply(item.element,html,item.html))progress.done++;else progress.errors++;});
-          } else {
-            batch.forEach(item=>{if(apply(item.element,cache.get(item.html),item.html))progress.done++;else progress.errors++;});
-          }
-          translated=originals.size>0;renderButton();
+    if(busy)return {busy,progress};if(translated)return {translated,progress};
+    busy=true;progress={done:0,total:0,errors:0};renderButton();const current=++generation;
+    try{
+      const status=await browser.runtime.sendMessage({action:'status'});
+      if(status?.error)throw Error(status.error);if(!status?.connected)throw Error('Открой Page Helper и войди через ChatGPT.');
+      if(current!==generation)return;
+      if(activeModel!==status.model){cache.clear();activeModel=status.model;}
+      const items=candidates(),batches=[];let group=[],size=0;progress.total=items.length;
+      for(const item of items){const bytes=new TextEncoder().encode(item.original).length;if(group.length>=16||size+bytes>4500){if(group.length)batches.push(group);group=[];size=0;}group.push(item);size+=bytes;}
+      if(group.length)batches.push(group);let next=0;renderButton();
+      async function worker(){
+        while(next<batches.length&&current===generation){
+          const batch=batches[next++],missing=[];
+          for(const item of batch){if(cache.has(item.original)){if(write(item,cache.get(item.original),true))progress.done++;else progress.errors++;}else missing.push(item);}
+          if(missing.length)await streamBatch(missing,current);translated=originals.size>0;renderButton();
         }
       }
-      // Two requests overlap; cancellation prevents late writes after restore/errors.
       const jobs=await Promise.allSettled([worker(),worker()]);
-      const failed=jobs.find(job=>job.status==='rejected');
-      if(failed)throw failed.reason;
+      const failed=jobs.find(job=>job.status==='rejected');if(failed&&current===generation)throw failed.reason;
       return {translated,progress};
-    } finally {busy=false;if(cache.size>500)cache.clear();renderButton();}
+    }finally{busy=false;translated=originals.size>0;if(cache.size>500)cache.clear();renderButton();}
   }
   // Isolated styles keep the page layout and the button independent.
   const host = document.createElement('div');
@@ -90,19 +83,32 @@
   host.style.cssText = 'all:initial!important;position:fixed!important;right:-10px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
   const shadow = host.attachShadow({mode:'closed'});
   shadow.innerHTML = `<style>
-    button{box-sizing:border-box;width:54px;height:44px;padding:6px 12px 6px 6px;border:0;border-radius:24px 0 0 24px;background:rgba(30,67,60,.62);color:#e0fff0;box-shadow:0 2px 8px #0002;font:600 14px system-ui;cursor:pointer;touch-action:none}
-    button:disabled{opacity:.85;cursor:progress}button:focus-visible{outline:3px solid #fff}
+    button{box-sizing:border-box;width:54px;height:48px;padding:6px 12px 6px 4px;border:0;border-radius:24px 0 0 24px;background:rgba(30,67,60,.62);color:#e0fff0;box-shadow:0 2px 8px #0002;font:600 14px system-ui;cursor:pointer;touch-action:none}
+    button:disabled{opacity:.85;cursor:progress}canvas{display:block;width:32px;height:32px;margin:auto;pointer-events:none}button.translated{background:rgba(65,70,69,.62)}button.translated canvas{filter:grayscale(1);opacity:.8}button:focus-visible{outline:3px solid #fff}
     .error{position:absolute;right:16px;top:50px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
-  </style><button type="button" aria-label="Перевести страницу">A↔Я</button><div class="error" role="alert" hidden></div>`;
+  </style><button type="button" aria-label="Перевести страницу"><canvas width="128" height="128" aria-hidden="true"></canvas></button><div class="error" role="alert" hidden></div>`;
   const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
+  const paper = new PageHelperPaper(shadow.querySelector('canvas'));
   function renderButton() {
     button.disabled=busy;
-    button.textContent=busy ? `${progress.total?Math.round(progress.done/progress.total*100):0}%` : translated ? '↶' : 'A↔Я';
+    paper.setBusy(busy);
+    button.classList.toggle('translated',translated && !busy);
     const label=busy ? `Перевожу: ${progress.done} из ${progress.total}` : translated ? 'Показать оригинал' : 'Перевести страницу';
     button.setAttribute('aria-label', label);button.title=label;
     error.textContent=progress.error || '';error.hidden=!progress.error;
   }
-  let pointer=null, suppressClick=false;
+  let pointer=null, suppressClick=false, position=null, positionChanged=false;
+  const positionRange=()=>Math.max(0,innerHeight-72);
+  function applyPosition(){if(position!==null)host.style.setProperty('top', `${8+position*positionRange()}px`, 'important');}
+  function savePosition(){
+    positionChanged=true;
+    position=Math.max(0,Math.min(1,(host.getBoundingClientRect().top-8)/Math.max(1,positionRange())));
+    browser.runtime.sendMessage({action:'setButtonPosition',position}).catch(()=>{});
+  }
+  window.addEventListener('resize',()=>{if(!pointer)applyPosition();});
+  browser.runtime.sendMessage({action:'getButtonPosition'}).then(data=>{
+    if(!positionChanged&&Number.isFinite(data?.position)&&data.position>=0&&data.position<=1){position=data.position;applyPosition();}
+  }).catch(()=>{});
   button.addEventListener('pointerdown', e=>{
     pointer={id:e.pointerId,x:e.clientX,y:e.clientY,top:host.getBoundingClientRect().top,moved:false};
     button.setPointerCapture(e.pointerId);
@@ -112,8 +118,8 @@
     if(Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y)>8)pointer.moved=true;
     if(pointer.moved)host.style.setProperty('top', `${Math.max(8,Math.min(innerHeight-64,pointer.top+e.clientY-pointer.y))}px`, 'important');
   });
-  button.addEventListener('pointerup',()=>{suppressClick=Boolean(pointer?.moved);pointer=null;});
-  button.addEventListener('pointercancel',()=>{pointer=null;suppressClick=true;});
+  button.addEventListener('pointerup',()=>{suppressClick=Boolean(pointer?.moved);if(pointer?.moved)savePosition();pointer=null;});
+  button.addEventListener('pointercancel',()=>{if(pointer?.moved)savePosition();pointer=null;suppressClick=true;});
   button.addEventListener('click',()=>{
     if(suppressClick){suppressClick=false;return;}
     if(busy)return;
@@ -122,12 +128,9 @@
   });
   document.documentElement.append(host);
   renderButton();
-  browser.runtime.onMessage.addListener(message => {
+  browser.runtime.onMessage.addListener(message=>{
     if(message.action==='pageStatus')return Promise.resolve({busy,translated,progress});
     if(message.action==='restore'){restore();return Promise.resolve({translated:false,progress});}
-    if(message.action==='translatePage'){
-      // Reply immediately; closing the popup must not stop translation.
-      translate().catch(e=>{progress.error=e.message;renderButton();});return Promise.resolve({started:true});
-    }
+    if(message.action==='translatePage'){translate().catch(e=>{progress.error=e.message;renderButton();});return Promise.resolve({started:true});}
   });
 })();
