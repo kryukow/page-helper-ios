@@ -19,22 +19,5 @@ Use the owner's personal certificate and Feather or GBox. Both the application a
 
 The App Group must belong to your Apple Developer team and be present in both provisioning profiles. The signer must preserve this group and allow the same shared keychain group in both targets. Renaming bundle identifiers or stripping entitlements may break access to the session. Compatibility with Feather/GBox has **not** been confirmed. Do not publish the certificate, private key or provisioning profiles.
 
-## First-device verification
-
-1. Confirm the host app and Safari extension are both installed.
-2. Confirm shared entitlement access works before sign-in. The app checks its App Group.
-3. Sign in using the official OpenAI page presented by Safari Services. OAuth callback uses a temporary listener on iPhone loopback only; it is stopped after login. This specific iOS flow still needs device testing. OpenAI scopes and PKCE follow the documented OSS flow; no custom redirect scheme or backend-api is used.
-4. Validate the signed ID token against OpenAI JWKS and save tokens only in iOS Keychain, not browser storage. Select a model from the account catalog.
-5. Test a short translation inside the app, then in Safari. Confirm original restoration, HTML preservation, errors and session renewal.
-6. Test with the PC off and using cellular internet.
-
-Prototype limitations: no dynamic-page observation, no frames, no PDF/image translation, skips code/forms and oversize blocks. Changed DOM is left untouched. JavaScript preserves original element objects and listeners, and changes only text nodes after verifying output tags and attributes. Errors leave unprocessed text original. Native requests are serialized at present until iOS extension execution and refresh lifecycle are verified; PC performance is not promised.
-
-## Remaining verification gates
-
-- Actual Xcode build has not been run on this Windows machine.
-- Loopback callback inside Safari Services must be verified on iPhone; authentication success is not claimed.
-- Shared signing/Keychain capabilities must survive Feather/GBox signing.
-- No source was published and no IPA exists until the workflow succeeds.
 
 Sources: https://developers.openai.com/siwc/token-sharing-open-source/sign-in and https://developer.apple.com/documentation/safariservices/messaging-between-the-app-and-javascript-in-a-safari-web-extension.
