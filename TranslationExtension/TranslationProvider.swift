@@ -17,16 +17,34 @@ import UIKit
     @State private var busy = false
     @State private var copied = false
     @State private var attempt = 0
+    @State private var firstSeconds: Double?
+    @State private var totalSeconds: Double?
+    @State private var preparationSeconds = 0.0
+    @State private var headersSeconds = 0.0
+    @State private var usedModel = ""
     private var source: String { context.inputText.map { String($0.characters) } ?? "" }
     var body: some View {
         VStack(spacing: 14) {
-            if busy {
+            if busy && result.isEmpty {
                 PaperAssemblyLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if !result.isEmpty { Text(result).textSelection(.enabled) }
+                    if busy { ProgressView("Перевожу…").font(.caption) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Повторить") { attempt += 1 } }
+                    if let first = firstSeconds, let total = totalSeconds, !busy, error.isEmpty {
+                        DisclosureGroup("Время перевода") {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Первые слова: \(seconds(first)) с")
+                                Text("Полный перевод: \(seconds(total)) с")
+                                Text("Подготовка: \(seconds(preparationSeconds)) с")
+                                Text("До ответа сервера: \(seconds(headersSeconds)) с")
+                                Text(usedModel)
+                            }.font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        }.font(.caption).foregroundStyle(.secondary)
+                    }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             }
@@ -42,6 +60,8 @@ import UIKit
     }
     private func translate() async {
         result = ""; error = ""; copied = false; busy = true
+        firstSeconds = nil; totalSeconds = nil; preparationSeconds = 0; headersSeconds = 0; usedModel = ""
+        let started = ProcessInfo.processInfo.systemUptime
         let text = source
         defer { if !Task.isCancelled { busy = false } }
         do {
@@ -51,12 +71,27 @@ import UIKit
             let session = try await OpenAI.refresh(saved)
             let model = try SessionStore.defaults().string(forKey:"model") ?? ""
             guard !model.isEmpty else { throw Failure.message("Выбери модель в Page Helper.") }
-            let translated = try await OpenAI.translate([text], model:model, session:session, plainText:true)
+            usedModel = model
+            preparationSeconds = ProcessInfo.processInfo.systemUptime - started
+            let translated = try await OpenAI.translateText(text, model: model, session: session) { partial in
+                guard !Task.isCancelled, source == text else { return }
+                if firstSeconds == nil { firstSeconds = ProcessInfo.processInfo.systemUptime - started }
+                result = partial
+            }
             try Task.checkCancellation()
             guard source == text else { return }
-            result = translated[0]
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+            result = translated.text
+            firstSeconds = firstSeconds ?? preparationSeconds + translated.firstTextSeconds
+            totalSeconds = ProcessInfo.processInfo.systemUptime - started
+            headersSeconds = translated.headersSeconds
+        } catch {
+            if !Task.isCancelled {
+                result = "" // An interrupted stream must not look like a complete translation.
+                self.error = error.localizedDescription
+            }
+        }
     }
+    private func seconds(_ value: Double) -> String { String(format: "%.1f", value).replacingOccurrences(of: ".", with: ",") }
 }
 
 private struct PaperAssemblyLoader: View {
