@@ -20,16 +20,8 @@ import UIKit
     private var source: String { context.inputText.map { String($0.characters) } ?? "" }
     var body: some View {
         VStack(spacing: 14) {
-            HStack {
-                Label("Page Helper", systemImage: "doc.text") .font(.headline)
-                Spacer()
-                Button { context.finish(translation: nil) } label: { Image(systemName: "xmark.circle.fill").font(.title2) }.accessibilityLabel("Закрыть")
-            }
-            HStack { Text("Определить язык"); Image(systemName: "arrow.right"); Text("Русский") }.font(.subheadline).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(source).textSelection(.enabled).foregroundStyle(.secondary)
-                    Divider()
                     if busy { ProgressView("Перевожу…") }
                     if !result.isEmpty { Text(result).textSelection(.enabled) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Повторить") { attempt += 1 } }
