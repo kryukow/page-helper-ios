@@ -6,6 +6,9 @@ allowed = {'.swift','.js','.json','.html','.plist','.entitlements','.yml','.md',
 bad = []
 for p in root.rglob('*'):
     if not p.is_file() or any(x in p.relative_to(root).parts for x in ('build','.git','DerivedData')): continue
+    if p.relative_to(root).as_posix() == 'App/Assets.xcassets/AppIcon.appiconset/AppIcon.png':
+        if not p.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'): bad.append(str(p.relative_to(root)))
+        continue
     if p.name != '.gitignore' and p.suffix not in allowed: bad.append(str(p.relative_to(root))); continue
     if p.name in ('connection.json','session.json') or p.name.startswith('.env'): bad.append(str(p.relative_to(root)))
     s = p.read_text(encoding='utf-8')
