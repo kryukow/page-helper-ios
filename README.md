@@ -1,4 +1,4 @@
-# Page Helper for iPhone — prototype
+# Page Helper for iPhone - prototype
 
 Safari translation using a user's own ChatGPT plan. Replaces original text by default; restores the original without reloading. No server or running PC is used during translation. Compilation is verified; on-device sign-in and translation still require testing.
 
