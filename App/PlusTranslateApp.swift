@@ -14,7 +14,6 @@ struct BrowserLink:Identifiable {let id=UUID();let url:URL}
 struct SettingsView:View {
     @StateObject private var login=Login()
     @State private var busy=false
-    @State private var testBusy=false
     @State private var connected=false
     @State private var status="Открой настройки и подключи ChatGPT."
     @State private var choices:[ModelChoice]=[]
@@ -63,7 +62,7 @@ struct SettingsView:View {
                     if busy { ProgressView().tint(mint).frame(maxWidth: .infinity) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
+                .padding(20).background(card.opacity(0.88), in: RoundedRectangle(cornerRadius: 24))
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("МОДЕЛЬ")
@@ -77,11 +76,10 @@ struct SettingsView:View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
+                .padding(20).background(card.opacity(0.88), in: RoundedRectangle(cornerRadius: 24))
 
                 VStack(alignment: .leading, spacing: 16) {
                     sectionLabel("ПРОВЕРКА")
-                    VacuumTranslationView(isTranslating: testBusy).frame(height: 110)
                     TextEditor(text: $testText)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 100)
@@ -89,9 +87,7 @@ struct SettingsView:View {
                         .accessibilityLabel("Текст для проверки перевода")
                         .disabled(busy)
                     Button { run {
-                        testBusy = true
                         result = ""
-                        defer { testBusy = false }
                         guard let saved = try SessionStore.load() else { throw Failure.message("Войди через ChatGPT.") }
                         let s = try await OpenAI.refresh(saved)
                         guard !model.isEmpty else { throw Failure.message("Выбери модель.") }
@@ -108,7 +104,7 @@ struct SettingsView:View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
+                .padding(20).background(card.opacity(0.88), in: RoundedRectangle(cornerRadius: 24))
 
                 Text("Page Helper · \(version)")
                     .font(.caption2).foregroundStyle(mint.opacity(0.45))
@@ -116,7 +112,12 @@ struct SettingsView:View {
             }
             .padding(.horizontal, 20)
         }
-        .background(Color(red: 0.025, green: 0.055, blue: 0.045).ignoresSafeArea())
+        .background {
+            AmbientVacuumFloor()
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .tint(mint)
         .preferredColorScheme(.dark)
         .task { do { try await reload() } catch { status = error.localizedDescription } }
@@ -149,49 +150,111 @@ struct SettingsView:View {
     }
 }
 
-private struct VacuumTranslationView: View {
-    let isTranslating: Bool
-    @State private var started = Date()
+private struct AmbientVacuumFloor: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var started = Date()
+    @State private var pausedAt: Date?
+    @State private var visible = false
+    @State private var seed = Double.random(in: 1...100_000)
     private let mint = Color(red: 0.58, green: 0.94, blue: 0.79)
-    private let letters = Array("アイウエオカキクケコサシスセソ")
+    // Decorative foreign letters; deliberately excludes Cyrillic and Han characters.
+    private let glyphs = Array("ABCDEFGHJKLMNPQRSTUVXYZabcdefghjkmnpqrstuvxyz0123456789ßüöéàñçαβγδεζηθλμπσφψωאבגדהוזחטיךלמנסעפצקרשתابتثجحخدذرزسشصضطظعغفقكلمنهوي")
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let phase = timeline.date.timeIntervalSince(started).truncatingRemainder(dividingBy: 4.5) / 4.5
-                let position = reduceMotion ? width * 0.5 : -35 + (width + 70) * phase
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(mint.opacity(0.035))
-                    ForEach(letters.indices, id: \.self) { index in
-                        let x = 22 + (width - 44) * CGFloat(index) / CGFloat(letters.count - 1)
-                        Text(String(letters[index]))
-                            .font(.system(size: 18, weight: .medium, design: .rounded))
-                            .foregroundStyle(mint.opacity(0.6))
-                            .opacity(reduceMotion || x > position + 18 ? 1 : 0)
-                            .scaleEffect(reduceMotion || x > position + 18 ? 1 : 0.2)
-                            .position(x: x, y: 40 + CGFloat(index % 3) * 8)
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0,
+                                paused: reduceMotion || scenePhase != .active || !visible)) { timeline in
+            Canvas { context, size in
+                context.fill(Path(CGRect(origin: .zero, size: size)),
+                             with: .color(Color(red: 0.025, green: 0.055, blue: 0.045)))
+                let elapsed = reduceMotion ? 0 : max(0, (pausedAt ?? timeline.date).timeIntervalSince(started))
+                let robot = location(elapsed, size: size)
+                let ahead = location(elapsed + 0.15, size: size)
+                let angle = atan2(ahead.y - robot.y, ahead.x - robot.x)
+                // Recent swept floor: letters disappear along the actual route, then gently return.
+                let history = (0..<40).map { location(max(0, elapsed - Double($0) * 0.25), size: size) }
+                let columns = max(4, Int(size.width / 42))
+                let rows = max(6, Int(size.height / 50))
+                for row in 0..<rows {
+                    for column in 0..<columns {
+                        let index = row * columns + column
+                        let x = (CGFloat(column) + 0.5) * size.width / CGFloat(columns)
+                        let y = (CGFloat(row) + 0.5) * size.height / CGFloat(rows)
+                        var point = CGPoint(x: x + CGFloat(noise(index + 300) - 0.5) * 18,
+                                            y: y + CGFloat(noise(index + 600) - 0.5) * 20)
+                        let distance = hypot(point.x - robot.x, point.y - robot.y)
+                        var opacity = 0.07 + noise(index + 900) * 0.09
+                        if !reduceMotion {
+                            if let swept = history.firstIndex(where: { hypot(point.x - $0.x, point.y - $0.y) < 25 }) {
+                                opacity *= min(1, max(0, (Double(swept) * 0.25 - 6) / 4))
+                            } else if distance < 52 {
+                                let pull = pow(1 - Double(distance) / 52, 2)
+                                point.x += (robot.x - point.x) * CGFloat(pull)
+                                point.y += (robot.y - point.y) * CGFloat(pull)
+                                opacity *= 1 - pull
+                            }
+                        }
+                        let glyph = glyphs[Int(noise(index + 1200) * Double(glyphs.count)) % glyphs.count]
+                        context.draw(Text(String(glyph))
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                            .foregroundColor(mint.opacity(opacity)), at: point)
                     }
-                    ZStack {
-                        Circle().fill(Color(red: 0.10, green: 0.27, blue: 0.22))
-                        Circle().stroke(mint.opacity(0.75), lineWidth: 2)
-                        Circle().fill(mint.opacity(0.8)).frame(width: 12, height: 12)
-                        Capsule().fill(mint).frame(width: 13, height: 3).offset(x: 13)
-                        Circle().fill(mint.opacity(0.25)).frame(width: 7, height: 7).offset(x: -10, y: -11)
-                    }
-                    .frame(width: 42, height: 42)
-                    .shadow(color: mint.opacity(0.15), radius: 8)
-                    .position(x: position, y: 48)
-                    Text(isTranslating ? "Перевожу…" : "")
-                        .font(.caption).foregroundStyle(mint.opacity(0.65))
-                        .position(x: width / 2, y: 91)
                 }
-                .clipped()
+                var vacuum = context
+                vacuum.translateBy(x: robot.x, y: robot.y)
+                vacuum.rotate(by: .radians(Double(angle)))
+                vacuum.opacity = 0.45
+                let shell = Path(ellipseIn: CGRect(x: -23, y: -23, width: 46, height: 46))
+                vacuum.fill(shell, with: .color(Color(red: 0.12, green: 0.28, blue: 0.23)))
+                vacuum.stroke(shell, with: .color(mint.opacity(0.7)), lineWidth: 1.5)
+                vacuum.stroke(Path(ellipseIn: CGRect(x: -18, y: -18, width: 36, height: 36)),
+                              with: .color(mint.opacity(0.15)), lineWidth: 1)
+                vacuum.fill(Path(ellipseIn: CGRect(x: -7, y: -7, width: 14, height: 14)),
+                            with: .color(mint.opacity(0.55)))
+                vacuum.fill(Path(roundedRect: CGRect(x: 14, y: -6, width: 3, height: 12), cornerRadius: 1.5),
+                            with: .color(mint.opacity(0.75)))
+                vacuum.fill(Path(ellipseIn: CGRect(x: -14, y: -13, width: 4, height: 4)),
+                            with: .color(mint.opacity(0.4)))
+                var brush = Path()
+                for arm in 0..<3 {
+                    let turn = Double(arm) * .pi * 2 / 3 + elapsed * 2
+                    brush.move(to: CGPoint(x: 15, y: 19))
+                    brush.addLine(to: CGPoint(x: 15 + cos(turn) * 8, y: 19 + sin(turn) * 8))
+                }
+                vacuum.stroke(brush, with: .color(mint.opacity(0.5)), lineWidth: 1)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isTranslating ? "Идёт перевод" : "Пылесос собирает матричные буквы")
+        .onAppear { visible = true; resume() }
+        .onDisappear { pause(); visible = false }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { resume() } else { pause() }
+        }
+    }
+    private func pause() { if pausedAt == nil { pausedAt = Date() } }
+    private func resume() {
+        if let pause = pausedAt { started = started.addingTimeInterval(Date().timeIntervalSince(pause)); pausedAt = nil }
+    }
+    private func noise(_ index: Int) -> Double {
+        let value = sin(Double(index) * 127.1 + seed * 0.013) * 43758.5453
+        return value - floor(value)
+    }
+    private func waypoint(_ index: Int, size: CGSize) -> CGPoint {
+        CGPoint(x: 30 + CGFloat(noise(index * 2 + 10)) * max(0, size.width - 60),
+                y: 50 + CGFloat(noise(index * 2 + 11)) * max(0, size.height - 100))
+    }
+    private func location(_ time: Double, size: CGSize) -> CGPoint {
+        let segment = time / 7
+        let index = Int(floor(segment))
+        let t = CGFloat(segment - floor(segment))
+        let a = waypoint(index - 1, size: size)
+        let b = waypoint(index, size: size)
+        let c = waypoint(index + 1, size: size)
+        let d = waypoint(index + 2, size: size)
+        func coordinate(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
+            let t2 = t * t, t3 = t2 * t
+            return 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+        }
+        return CGPoint(x: min(max(26, coordinate(a.x, b.x, c.x, d.x)), max(26, size.width - 26)),
+                       y: min(max(36, coordinate(a.y, b.y, c.y, d.y)), max(36, size.height - 36)))
     }
 }
