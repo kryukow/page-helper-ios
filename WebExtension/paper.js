@@ -28,45 +28,45 @@ globalThis.PageHelperPaper = class {
   }
   pose(time) {
     const moving=this.busy&&!this.motion.matches;
-    return {t:moving?(time-this.started)/1000:0,moving};
+    const t=moving?(time-this.started)/1000:0;
+    return {t,moving,x:32+(moving?8*Math.sin(t*.9):0),y:32+(moving?6*Math.sin(t*1.3):0)};
   }
   draw(time) {
     const ctx=this.canvas.getContext('2d');if(!ctx)return;
     const p=this.pose(time);
     ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
     ctx.save();ctx.scale(this.canvas.width/64,this.canvas.height/64);
-    // The robot itself is the button: no plate, paper or semicircle behind it.
-    ctx.translate(32,32);
-    const brush=(x,y,phase)=>{
-      ctx.save();ctx.translate(x,y);ctx.rotate(phase);
-      ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.6;ctx.lineCap='round';ctx.beginPath();
+    // Full robot inside the selected mint capsule; glyphs disappear underneath it.
+    if(p.moving){
+      const letters=['A','ß','é','λ','ñ'];
+      ctx.font='8px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+      for(let i=0;i<letters.length;i++){
+        const phase=(p.t*.5+i/letters.length)%1,angle=i*1.22+1.7,radius=27-13*phase;
+        ctx.fillStyle=`rgba(148,240,201,${.9*Math.sin(Math.PI*phase)})`;
+        ctx.fillText(letters[i],p.x+Math.cos(angle)*radius,p.y+Math.sin(angle)*radius);
+      }
+    }
+    ctx.translate(p.x,p.y);
+    const radius=17;
+    const brush=(x,y,spin)=>{
+      ctx.save();ctx.translate(x,y);ctx.rotate(spin);
+      ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.4;ctx.lineCap='round';ctx.beginPath();
       for(let arm=0;arm<3;arm++){
         const angle=arm*Math.PI*2/3;
-        ctx.moveTo(0,0);ctx.lineTo(Math.cos(angle)*7,Math.sin(angle)*7);
+        ctx.moveTo(0,0);ctx.lineTo(Math.cos(angle)*5,Math.sin(angle)*5);
       }
       ctx.stroke();ctx.restore();
     };
-    if(p.moving){
-      const letters=['A','ß','é','λ','ñ','β'];
-      ctx.font='6px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
-      for(let i=0;i<6;i++){
-        const phase=((p.t*.55+i/6)%1),angle=2.3+i*.63;
-        const radius=32-12*phase;
-        ctx.fillStyle=`rgba(148,240,201,${.8*Math.sin(Math.PI*phase)})`;
-        ctx.fillText(letters[i],Math.cos(angle)*radius,Math.sin(angle)*radius);
-      }
-    }
-    brush(-17,17,p.t*6);brush(17,17,-p.t*6);
-    const finish=ctx.createLinearGradient(-20,-23,20,24);
-    finish.addColorStop(0,'#376e5b');finish.addColorStop(1,'#17392f');
-    ctx.fillStyle=finish;ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.4;
-    ctx.beginPath();ctx.arc(0,0,23,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.strokeStyle='rgba(148,240,201,.2)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(0,0,19,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle='#94f0c9';ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='rgba(10,49,36,.4)';ctx.beginPath();ctx.arc(0,0,3.5,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle='#94f0c9';ctx.beginPath();ctx.roundRect(-3,-16,6,2,1);ctx.fill();
-    ctx.fillStyle='rgba(148,240,201,.5)';ctx.beginPath();ctx.arc(-12,-11,1.6,0,Math.PI*2);ctx.fill();
+    brush(-radius*.72,radius*.7,p.t*6);brush(radius*.72,radius*.7,-p.t*6);
+    const finish=ctx.createLinearGradient(-radius,-radius,radius,radius);
+    finish.addColorStop(0,'#42876e');finish.addColorStop(1,'#173d30');
+    ctx.fillStyle=finish;ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='rgba(148,240,201,.22)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(0,0,radius-3,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='#94f0c9';ctx.beginPath();ctx.arc(0,0,radius*.25,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.roundRect(-3,-radius*.7,6,2,1);ctx.fill();
+    ctx.beginPath();ctx.arc(-radius*.5,-radius*.45,1.3,0,Math.PI*2);ctx.fill();
     ctx.restore();
   }
   dispose(){

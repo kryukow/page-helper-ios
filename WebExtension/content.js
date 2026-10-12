@@ -92,11 +92,11 @@
   // Isolated styles keep the page layout and the button independent.
   const host = document.createElement('div');
   host.setAttribute('data-plus-translate-ui', '');
-  host.style.cssText = 'all:initial!important;position:fixed!important;right:-32px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
+  host.style.cssText = 'all:initial!important;position:fixed!important;right:-8.5px!important;top:55%!important;z-index:2147483647!important;display:block!important;';
   const shadow = host.attachShadow({mode:'closed'});
   shadow.innerHTML = `<style>
-    button{box-sizing:border-box;width:64px;height:64px;padding:0;border:0;border-radius:0;background:transparent;color:#e0fff0;box-shadow:none;font:600 14px system-ui;cursor:pointer;touch-action:none}
-    button:disabled{opacity:.85;cursor:progress}canvas{display:block;width:64px;height:64px;margin:0;pointer-events:none}button.translated canvas{filter:grayscale(1);opacity:.8}button:focus-visible{outline:3px solid #fff}
+    button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:54.4px;height:42.5px;padding:0 8.5px 0 0;border:0;border-radius:22.1px 0 0 22.1px;background:rgba(33,75,64,.90);opacity:.55;color:#e0fff0;box-shadow:0 3px 12px #0002;font:600 14px system-ui;cursor:pointer;touch-action:none}
+    button:disabled{opacity:.85;cursor:progress}canvas{display:block;width:34px;height:34px;margin:0;pointer-events:none}button.translated{background:rgba(65,70,69,.75)}button.translated canvas{filter:grayscale(1);opacity:.8}button:focus-visible{outline:3px solid #fff}
     .error{position:absolute;right:16px;top:50px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
   </style><button type="button" aria-label="Перевести страницу"><canvas width="128" height="128" aria-hidden="true"></canvas></button><div class="error" role="alert" hidden></div>`;
   const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
@@ -110,7 +110,7 @@
     error.textContent=progress.error || '';error.hidden=!progress.error;
   }
   let pointer=null, suppressClick=false, position=null, positionChanged=false;
-  const positionRange=()=>Math.max(0,innerHeight-80);
+  const positionRange=()=>Math.max(0,innerHeight-58.5);
   function applyPosition(){if(position!==null)host.style.setProperty('top', `${8+position*positionRange()}px`, 'important');}
   function savePosition(){
     positionChanged=true;
@@ -128,7 +128,7 @@
   button.addEventListener('pointermove', e=>{
     if(!pointer || pointer.id!==e.pointerId)return;
     if(Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y)>8)pointer.moved=true;
-    if(pointer.moved)host.style.setProperty('top', `${Math.max(8,Math.min(innerHeight-72,pointer.top+e.clientY-pointer.y))}px`, 'important');
+    if(pointer.moved)host.style.setProperty('top', `${Math.max(8,Math.min(innerHeight-50.5,pointer.top+e.clientY-pointer.y))}px`, 'important');
   });
   button.addEventListener('pointerup',()=>{suppressClick=Boolean(pointer?.moved);if(pointer?.moved)savePosition();pointer=null;});
   button.addEventListener('pointercancel',()=>{if(pointer?.moved)savePosition();pointer=null;suppressClick=true;});

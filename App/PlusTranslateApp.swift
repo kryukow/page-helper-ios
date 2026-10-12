@@ -18,6 +18,7 @@ struct SettingsView:View {
     @State private var status="Открой настройки и подключи ChatGPT."
     @State private var choices:[ModelChoice]=[]
     @State private var model=""
+    @FocusState private var testTextFocused: Bool
     @State private var testText="Das Gerät wird mit einem USB-C-Kabel geliefert. Preis: 33,95 €."
     @State private var result=""
     @State private var browser:BrowserLink?
@@ -81,12 +82,13 @@ struct SettingsView:View {
                 VStack(alignment: .leading, spacing: 16) {
                     sectionLabel("ПРОВЕРКА")
                     TextEditor(text: $testText)
+                        .focused($testTextFocused)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 100)
                         .foregroundStyle(.white.opacity(0.9))
                         .accessibilityLabel("Текст для проверки перевода")
                         .disabled(busy)
-                    Button { run {
+                    Button { testTextFocused = false; run {
                         result = ""
                         guard let saved = try SessionStore.load() else { throw Failure.message("Войди через ChatGPT.") }
                         let s = try await OpenAI.refresh(saved)
@@ -111,6 +113,19 @@ struct SettingsView:View {
                     .frame(maxWidth: .infinity).padding(.top, 6).padding(.bottom, 16)
             }
             .padding(.horizontal, 20)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if testTextFocused {
+                HStack {
+                    Spacer()
+                    Button("Готово") { testTextFocused = false }
+                        .font(.body.weight(.semibold))
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 20)
+                }
+                .background(.ultraThinMaterial)
+            }
         }
         .background {
             AmbientVacuumFloor()
