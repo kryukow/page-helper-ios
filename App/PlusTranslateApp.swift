@@ -15,6 +15,7 @@ struct SettingsView:View {
     @StateObject private var login=Login()
     @State private var busy=false
     @State private var testBusy=false
+    @State private var connected=false
     @State private var status="Открой настройки и подключи ChatGPT."
     @State private var choices:[ModelChoice]=[]
     @State private var model=""
@@ -47,16 +48,21 @@ struct SettingsView:View {
                     sectionLabel("ПОДКЛЮЧЕНИЕ")
                     Text(status).font(.subheadline).foregroundStyle(.white.opacity(0.85))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    if !connected {
                     Button { run { try await login.signIn(); try await reload() } } label: {
                         Text("Подключить ChatGPT").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 13)
                     }
                     .buttonStyle(.plain).foregroundStyle(Color(red: 0.03, green: 0.14, blue: 0.10))
                     .background(mint, in: RoundedRectangle(cornerRadius: 14))
                     .disabled(busy)
+                    }
+                    if connected {
                     Button("Отключить", role: .destructive) { run { try await logout() } }
                         .font(.subheadline).disabled(busy)
+                    }
                     if busy { ProgressView().tint(mint).frame(maxWidth: .infinity) }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -70,13 +76,12 @@ struct SettingsView:View {
                         catch { status = error.localizedDescription }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
 
                 VStack(alignment: .leading, spacing: 16) {
                     sectionLabel("ПРОВЕРКА")
-                    if testBusy {
-                        VacuumTranslationView().frame(height: 110)
-                    }
+                    VacuumTranslationView(isTranslating: testBusy).frame(height: 110)
                     TextEditor(text: $testText)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 100)
@@ -102,6 +107,7 @@ struct SettingsView:View {
                         Text(result).foregroundStyle(.white.opacity(0.9)).textSelection(.enabled)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20).background(card, in: RoundedRectangle(cornerRadius: 24))
 
                 Text("Page Helper · \(version)")
@@ -124,8 +130,8 @@ struct SettingsView:View {
     }
     private func run(_ task:@escaping() async throws->Void){busy=true;Task{do{try await task()}catch{status=error.localizedDescription};busy=false}}
     private func reload() async throws {
-        guard let saved=try SessionStore.load() else{status="Вход не выполнен.";return}
-        let s=try await OpenAI.refresh(saved);choices=try await OpenAI.models(s)
+        guard let saved=try SessionStore.load() else{connected=false;status="Вход не выполнен.";return}
+        let s=try await OpenAI.refresh(saved);connected=true;choices=try await OpenAI.models(s)
         guard !choices.isEmpty else{throw Failure.message("Нет доступных моделей.")}
         let wanted=try SessionStore.defaults().string(forKey:"model") ?? "gpt-6-luna"
         model=choices.first(where:{$0.id==wanted})?.id ?? choices[0].id
@@ -138,16 +144,17 @@ struct SettingsView:View {
             guard let endpoint=d["revocation_endpoint"] as? String else{throw Failure.message("Нет адреса отзыва.")}
             _=try await OpenAI.json(endpoint,method:"POST",body:OpenAI.form(["token":token,"token_type_hint":"refresh_token","client_id":s.client]),contentType:"application/x-www-form-urlencoded")
         }catch{revokeFailed=true}}
-        try SessionStore.clear();choices=[];model="";result=""
+        try SessionStore.clear();connected=false;choices=[];model="";result=""
         status=revokeFailed ? "Локальная сессия удалена. Удалённый отзыв не подтверждён; отключи приложение в настройках ChatGPT." : "Отключено."
     }
 }
 
 private struct VacuumTranslationView: View {
+    let isTranslating: Bool
     @State private var started = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let mint = Color(red: 0.58, green: 0.94, blue: 0.79)
-    private let letters = Array("Aa ß ü Ö é 文 字")
+    private let letters = Array("アイウエオカキクケコサシスセソ")
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
@@ -177,7 +184,7 @@ private struct VacuumTranslationView: View {
                     .frame(width: 42, height: 42)
                     .shadow(color: mint.opacity(0.15), radius: 8)
                     .position(x: position, y: 48)
-                    Text("Перевожу…")
+                    Text(isTranslating ? "Перевожу…" : "")
                         .font(.caption).foregroundStyle(mint.opacity(0.65))
                         .position(x: width / 2, y: 91)
                 }
@@ -185,6 +192,6 @@ private struct VacuumTranslationView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Идёт перевод")
+        .accessibilityLabel(isTranslating ? "Идёт перевод" : "Пылесос собирает матричные буквы")
     }
 }
