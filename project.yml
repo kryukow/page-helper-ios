@@ -9,8 +9,8 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     COMPRESS_PNG_FILES: NO
     TARGETED_DEVICE_FAMILY: '1,2'
-    MARKETING_VERSION: '0.3.2'
-    CURRENT_PROJECT_VERSION: '20'
+    MARKETING_VERSION: '0.3.3'
+    CURRENT_PROJECT_VERSION: '21'
 targets:
   PlusTranslate:
     type: application

@@ -161,16 +161,32 @@ private struct AmbientVacuumFloor: View {
     // Decorative foreign letters; deliberately excludes Cyrillic and Han characters.
     private let glyphs = Array("ABCDEFGHJKLMNPQRSTUVXYZabcdefghjkmnpqrstuvxyz0123456789ßüöéàñçαβγδεζηθλμπσφψωאבגדהוזחטיךלמנסעפצקרשתابتثجحخدذرزسشصضطظعغفقكلمنهوي")
 
+    private var paused: Bool { reduceMotion || scenePhase != .active || !visible }
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0,
-                                paused: reduceMotion || scenePhase != .active || !visible)) { timeline in
-            Canvas { context, size in
-                context.fill(Path(CGRect(origin: .zero, size: size)),
-                             with: .color(Color(red: 0.025, green: 0.055, blue: 0.045)))
-                let elapsed = reduceMotion ? 0 : max(0, (pausedAt ?? timeline.date).timeIntervalSince(started))
+        // Independent layers: text work cannot invalidate the 60 Hz robot view.
+        ZStack {
+            Color(red: 0.025, green: 0.055, blue: 0.045)
+            TimelineView(.animation(minimumInterval: 1.0 / 8.0, paused: paused)) { timeline in
+                Canvas { context, size in
+                    drawFloor(context: &context, size: size, date: timeline.date)
+                }
+            }
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { timeline in
+                Canvas { context, size in
+                    drawVacuum(context: context, size: size, date: timeline.date)
+                }
+            }
+        }
+        .onAppear { visible = true; resume() }
+        .onDisappear { pause(); visible = false }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { resume() } else { pause() }
+        }
+    }
+    private func drawFloor(context: inout GraphicsContext, size: CGSize, date: Date) {
+
+                let elapsed = reduceMotion ? 0 : max(0, (pausedAt ?? date).timeIntervalSince(started))
                 let robot = location(elapsed, size: size)
-                let ahead = location(elapsed + 0.15, size: size)
-                let angle = atan2(ahead.y - robot.y, ahead.x - robot.x)
                 // Recent swept floor: letters disappear along the actual route, then gently return.
                 let history = (0..<40).map { location(max(0, elapsed - Double($0) * 0.25), size: size) }
                 let columns = max(4, Int(size.width / 42))
@@ -200,6 +216,12 @@ private struct AmbientVacuumFloor: View {
                             .foregroundColor(mint.opacity(opacity)), at: point)
                     }
                 }
+    }
+    private func drawVacuum(context: GraphicsContext, size: CGSize, date: Date) {
+        let elapsed = reduceMotion ? 0 : max(0, (pausedAt ?? date).timeIntervalSince(started))
+        let robot = location(elapsed, size: size)
+        let ahead = location(elapsed + 0.05, size: size)
+        let angle = atan2(ahead.y - robot.y, ahead.x - robot.x)
                 var vacuum = context
                 vacuum.translateBy(x: robot.x, y: robot.y)
                 vacuum.rotate(by: .radians(Double(angle)))
@@ -222,13 +244,6 @@ private struct AmbientVacuumFloor: View {
                     brush.addLine(to: CGPoint(x: 15 + cos(turn) * 8, y: 19 + sin(turn) * 8))
                 }
                 vacuum.stroke(brush, with: .color(mint.opacity(0.5)), lineWidth: 1)
-            }
-        }
-        .onAppear { visible = true; resume() }
-        .onDisappear { pause(); visible = false }
-        .onChange(of: scenePhase) { phase in
-            if phase == .active { resume() } else { pause() }
-        }
     }
     private func pause() { if pausedAt == nil { pausedAt = Date() } }
     private func resume() {
