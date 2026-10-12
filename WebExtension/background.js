@@ -1,6 +1,11 @@
 /* Tokens remain in native code. Only translated text and a random request ID cross this boundary. */
 const native = async message => {
-  const response = await browser.runtime.sendNativeMessage('com.kryukov.plustranslate',message);
+  const limit=message.action==='streamStart'?60000:8000;let timer;
+  let response;
+  try{response=await Promise.race([
+    browser.runtime.sendNativeMessage('com.kryukov.plustranslate',message),
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Safari не получил ответ вовремя. Попробуй перевод ещё раз.')),limit);})
+  ]);}finally{clearTimeout(timer);}
   const data=response?.message??response;
   if(data?.error)throw Error(data.error);
   return data;
@@ -38,8 +43,12 @@ browser.runtime.onConnect.addListener(port=>{
       const running=native({action:'streamStart',id,segments}).then(value=>{result=value;complete=true;},failure=>{error=failure;complete=true;});
       const deadline=Date.now()+120000;
       while(!closed&&!complete){
-        const snapshot=await native({action:'streamPoll',id});
-        if(typeof snapshot.output==='string')publish(snapshot.output);
+        // A slow progress reply must never hide an already completed translation.
+        const snapshot=await Promise.race([
+          native({action:'streamPoll',id}).catch(()=>null),
+          running.then(()=>null)
+        ]);
+        if(typeof snapshot?.output==='string')publish(snapshot.output);
         if(Date.now()>deadline)throw Error('Время ожидания перевода истекло.');
         if(!complete&&!closed)await new Promise(resolve=>setTimeout(resolve,100));
       }

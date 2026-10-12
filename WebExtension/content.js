@@ -4,12 +4,19 @@
   const originals = new Map(), cache = new Map(), ports = new Map();
   let activeModel='', busy=false, translated=false, generation=0;
   let progress={done:0,total:0,errors:0};
-  const excluded='script,style,noscript,pre,code,textarea,input,select,svg,math,iframe,[contenteditable],[translate="no"],[aria-hidden="true"],[data-plus-translate-ui]';
+  const excluded='script,style,noscript,pre,code,textarea,input,select,svg,math,iframe,[hidden],[inert],[contenteditable],[translate="no"],[aria-hidden="true"],[data-plus-translate-ui]';
   function candidates() {
+    const visible=new WeakMap();
+    function isVisible(element){
+      if(!element)return true;if(visible.has(element))return visible.get(element);
+      const style=getComputedStyle(element);
+      const result=style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse'&&style.contentVisibility!=='hidden'&&Number(style.opacity)!==0&&isVisible(element.parentElement);
+      visible.set(element,result);return result;
+    }
     const nodes=[],walker=document.createTreeWalker(document.body||document.documentElement,NodeFilter.SHOW_TEXT);let node;
     while((node=walker.nextNode())){
       const parent=node.parentElement;
-      if(!parent||parent.closest(excluded)||!parent.getClientRects().length||!/[\p{L}]/u.test(node.data)||new TextEncoder().encode(node.data).length>20000)continue;
+      if(!parent||parent.closest(excluded)||!parent.getClientRects().length||!isVisible(parent)||!/[\p{L}]/u.test(node.data)||new TextEncoder().encode(node.data).length>20000)continue;
       nodes.push({node,original:node.data});
     }
     return nodes;
@@ -29,36 +36,41 @@
     for(const [port,cancel] of [...ports]){try{port.postMessage({type:'cancel'});}catch{}cancel();}
     ports.clear();
     for(const [node,saved] of originals){if(node.isConnected&&node.data===saved.translation)node.data=saved.original;}
-    originals.clear();translated=false;progress={done:0,total:0,errors:0};renderButton();
+    originals.clear();busy=false;translated=false;progress={done:0,total:0,errors:0};renderButton();
   }
   function streamBatch(items,current) {
     return new Promise((resolve,reject)=>{
-      const port=browser.runtime.connect({name:'page-helper-stream'});let finished=false;
-      const fail=error=>{if(finished)return;finished=true;rollback(items);ports.delete(port);port.disconnect();reject(error);};
+      const port=browser.runtime.connect({name:'page-helper-stream'});let finished=false,timer;
+      const deadline=setTimeout(()=>fail(Error('Safari не завершил перевод вовремя. Попробуй ещё раз.')),65000);
+      const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>fail(Error('Перевод перестал отвечать. Попробуй ещё раз.')),30000);};
+      const cleanup=()=>{clearTimeout(timer);clearTimeout(deadline);};
+      const fail=error=>{if(finished)return;finished=true;cleanup();rollback(items);ports.delete(port);port.disconnect();reject(error);};
       ports.set(port,()=>fail(Error('Перевод отменён.')));
       port.onDisconnect.addListener(()=>{if(!finished)fail(Error(current===generation?'Перевод прервался. Попробуй ещё раз.':'Перевод отменён.'));});
       port.onMessage.addListener(event=>{
-        if(finished)return;
+        if(finished)return;arm();
         if(current!==generation){fail(Error('Перевод отменён.'));return;}
         if(event.type==='error'){fail(Error(event.error||'Не удалось перевести.'));return;}
         if(event.type==='update'){
           if(!Number.isInteger(event.index)||event.index<0||event.index>=items.length||typeof event.text!=='string'){fail(Error('Некорректный поток перевода.'));return;}
-          write(items[event.index],event.text,event.complete);translated=originals.size>0;renderButton();
+          // Reveal completed text fragments together, without character-by-character typing.
+          if(event.complete){write(items[event.index],event.text,true);translated=originals.size>0;renderButton();}
         }
         if(event.type==='done'){
           if(!Array.isArray(event.translations)||event.translations.length!==items.length||!event.translations.every(s=>typeof s==='string')){fail(Error('Перевод не завершён.'));return;}
           event.translations.forEach((text,i)=>{cache.set(items[i].original,text);if(write(items[i],text,true))progress.done++;else progress.errors++;});
-          finished=true;ports.delete(port);port.disconnect();translated=originals.size>0;renderButton();resolve();
+          finished=true;cleanup();ports.delete(port);port.disconnect();translated=originals.size>0;renderButton();resolve();
         }
       });
-      port.postMessage({type:'translate',segments:items.map(item=>item.original)});
+      arm();port.postMessage({type:'translate',segments:items.map(item=>item.original)});
     });
   }
   async function translate() {
     if(busy)return {busy,progress};if(translated)return {translated,progress};
     busy=true;progress={done:0,total:0,errors:0};renderButton();const current=++generation;
     try{
-      const status=await browser.runtime.sendMessage({action:'status'});
+      let statusTimer;let status;
+      try{status=await Promise.race([browser.runtime.sendMessage({action:'status'}),new Promise((_,reject)=>{statusTimer=setTimeout(()=>reject(Error('Safari не отвечает. Обнови вкладку и попробуй снова.')),10000);})]);}finally{clearTimeout(statusTimer);}
       if(status?.error)throw Error(status.error);if(!status?.connected)throw Error('Открой Page Helper и войди через ChatGPT.');
       if(current!==generation)return;
       if(activeModel!==status.model){cache.clear();activeModel=status.model;}
@@ -75,7 +87,7 @@
       const jobs=await Promise.allSettled([worker(),worker()]);
       const failed=jobs.find(job=>job.status==='rejected');if(failed&&current===generation)throw failed.reason;
       return {translated,progress};
-    }finally{busy=false;translated=originals.size>0;if(cache.size>500)cache.clear();renderButton();}
+    }catch(error){if(current!==generation)return {translated,progress};throw error;}finally{if(current===generation){busy=false;translated=originals.size>0;if(cache.size>500)cache.clear();renderButton();}}
   }
   // Isolated styles keep the page layout and the button independent.
   const host = document.createElement('div');
@@ -90,10 +102,10 @@
   const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
   const paper = new PageHelperPaper(shadow.querySelector('canvas'));
   function renderButton() {
-    button.disabled=busy;
+    button.disabled=false;
     paper.setBusy(busy);
     button.classList.toggle('translated',translated && !busy);
-    const label=busy ? `Перевожу: ${progress.done} из ${progress.total}` : translated ? 'Показать оригинал' : 'Перевести страницу';
+    const label=busy ? `Остановить перевод (${progress.done} из ${progress.total})` : translated ? 'Показать оригинал' : 'Перевести страницу';
     button.setAttribute('aria-label', label);button.title=label;
     error.textContent=progress.error || '';error.hidden=!progress.error;
   }
@@ -122,7 +134,7 @@
   button.addEventListener('pointercancel',()=>{if(pointer?.moved)savePosition();pointer=null;suppressClick=true;});
   button.addEventListener('click',()=>{
     if(suppressClick){suppressClick=false;return;}
-    if(busy)return;
+    if(busy){restore();return;}
     if(translated){restore();progress.error=null;renderButton();}
     else translate().catch(e=>{progress.error=e.message;renderButton();});
   });
