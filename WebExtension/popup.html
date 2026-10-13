@@ -1,1 +1,29 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Page Helper</title><style>body{font:16px system-ui;min-width:260px;padding:16px;background:#111827;color:#fff}button{display:block;width:100%;margin:10px 0;padding:12px;border:0;border-radius:10px;background:#a7f3d0}p{font-size:14px}</style></head><body><h2>Page Helper</h2><p id="status">Проверяю подключение…</p><button id="translate">Перевести страницу</button><button id="restore">Показать оригинал</button><p>Вход и модель — в приложении Page Helper. Перевод заменяет оригинальный текст.</p><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Page Helper</title>
+<style>
+  body{font:15px system-ui;min-width:260px;padding:16px;margin:0;background:#0a1c18;color:#edfff6}
+  header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  h2{margin:0;color:#94f0c9;font-size:21px;letter-spacing:-.4px}
+  #mint-mark{display:block;width:50px;height:50px}
+  button{display:block;width:100%;margin:10px 0;padding:12px;border:1px solid rgba(148,240,201,.24);border-radius:12px;background:#a7f3d0;color:#11382d;font:600 14px system-ui;cursor:pointer}
+  button#restore{background:rgba(148,240,201,.11);color:#bcffe1}
+  button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  p{font-size:13px;line-height:1.5;color:#b6d6c6}
+  #status{color:#d7ffec}
+  @media(prefers-reduced-motion:reduce){#mint-mark{animation:none}}
+</style>
+</head>
+<body>
+<header><canvas id="mint-mark" width="128" height="128" aria-hidden="true"></canvas><h2>Page Helper</h2></header>
+<p id="status" role="status" aria-live="polite">Проверяю подключение…</p>
+<button id="translate">Перевести страницу</button>
+<button id="restore">Показать оригинал</button>
+<p>Вход и модель — в приложении Page Helper. Перевод заменяет оригинальный текст.</p>
+<script src="paper.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
