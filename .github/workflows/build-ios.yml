@@ -23,6 +23,9 @@ jobs:
         run: |
           swiftc Extension/SafariStreamCoordinator.swift scripts/test_safari_coordinator.swift -o build/safari-stream-tests
           build/safari-stream-tests
+      - name: Check Safari JavaScript syntax
+        run: |
+          for source in WebExtension/*.js; do node --check "$source"; done
       - name: Install project generator
         run: brew install xcodegen
       - name: Generate explicit app icon sizes
