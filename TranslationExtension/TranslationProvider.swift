@@ -25,13 +25,16 @@ import UIKit
     private var source: String { context.inputText.map { String($0.characters) } ?? "" }
     var body: some View {
         VStack(spacing: 14) {
-            if busy && result.isEmpty {
-                VacuumTranslationLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            ZStack {
+                if busy {
+                    TranslationVacuumView()
+                        .opacity(result.isEmpty ? 0.85 : 0.22)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if !result.isEmpty { Text(result).textSelection(.enabled) }
-                    if busy { ProgressView("Перевожу…").font(.caption) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Повторить") { attempt += 1 } }
                     if let first = firstSeconds, let total = totalSeconds, !busy, error.isEmpty {
                         DisclosureGroup("Время перевода") {
@@ -47,7 +50,7 @@ import UIKit
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
                 Button(copied ? "Скопировано" : "Копировать", systemImage: "doc.on.doc") { UIPasteboard.general.string = result; copied = true }.disabled(result.isEmpty || busy)
                 Spacer()
@@ -94,17 +97,3 @@ import UIKit
     private func seconds(_ value: Double) -> String { String(format: "%.1f", value).replacingOccurrences(of: ".", with: ",") }
 }
 
-private struct VacuumTranslationLoader: View {
-    var body: some View {
-        VStack(spacing: 18) {
-            AmbientVacuumFloor(floorColor: .clear, robotOpacity: 0.85)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            Text("Перевожу…").font(.callout).foregroundStyle(.secondary)
-                .padding(.bottom, 24)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Идёт перевод")
-    }
-}
