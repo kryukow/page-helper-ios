@@ -31,9 +31,7 @@ struct SettingsView:View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(spacing: 14) {
-                    Image(systemName: "doc.text.fill")
-                        .font(.system(size: 30, weight: .medium))
-                        .foregroundStyle(mint)
+                    MintFlowMark(size: 58)
                         .frame(width: 58, height: 58)
                         .background(mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
                     Text("Page Helper")
@@ -60,7 +58,14 @@ struct SettingsView:View {
                     Button("Отключить", role: .destructive) { run { try await logout() } }
                         .font(.subheadline).disabled(busy)
                     }
-                    if busy { ProgressView().tint(mint).frame(maxWidth: .infinity) }
+                    if busy {
+                        HStack(spacing: 10) {
+                            MintFlowMark(size: 34)
+                            Text("Обрабатываю…").font(.caption).foregroundStyle(mint)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Обработка запроса")
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20).background(card.opacity(0.88), in: RoundedRectangle(cornerRadius: 24))
