@@ -96,14 +96,14 @@
   const shadow = host.attachShadow({mode:'closed'});
   shadow.innerHTML = `<style>
     button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:54.4px;height:42.5px;padding:0 8.5px 0 0;border:0;border-radius:22.1px 0 0 22.1px;background:rgba(33,75,64,.90);opacity:.55;color:#e0fff0;box-shadow:0 3px 12px #0002;font:600 14px system-ui;cursor:pointer;touch-action:none}
-    button:disabled{opacity:.85;cursor:progress}canvas{display:block;width:34px;height:34px;margin:0;pointer-events:none}button.translated{background:rgba(65,70,69,.75)}button.translated canvas{filter:grayscale(1);opacity:.8}button:focus-visible{outline:3px solid #fff}
+    button:disabled{opacity:.85;cursor:progress}canvas{display:block;width:34px;height:34px;margin:0;pointer-events:none}button.translated{background:rgba(18,107,82,.90)}button.translated canvas{opacity:1}button:focus-visible{outline:3px solid #fff}
     .error{position:absolute;right:16px;top:50px;width:230px;padding:12px;border-radius:12px;background:#182522;color:white;font:14px system-ui;box-shadow:0 3px 14px #0005}
   </style><button type="button" aria-label="Перевести страницу"><canvas width="128" height="128" aria-hidden="true"></canvas></button><div class="error" role="alert" hidden></div>`;
   const button = shadow.querySelector('button'), error = shadow.querySelector('.error');
   const paper = new PageHelperPaper(shadow.querySelector('canvas'));
   function renderButton() {
     button.disabled=false;
-    paper.setBusy(busy);
+    paper.setBusy(busy, translated && !busy);
     button.classList.toggle('translated',translated && !busy);
     const label=busy ? `Остановить перевод (${progress.done} из ${progress.total})` : translated ? 'Показать оригинал' : 'Перевести страницу';
     button.setAttribute('aria-label', label);button.title=label;
