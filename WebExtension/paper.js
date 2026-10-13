@@ -1,77 +1,156 @@
-/* Compact vacuum animation. The legacy export keeps the button protocol stable. */
+/* Mint Flow (02): the Page Helper glass-page identity used by Safari's floating capsule.
+   The legacy PageHelperPaper export is preserved for the existing button protocol. */
 globalThis.PageHelperPaper = class {
   constructor(canvas) {
-    this.canvas=canvas;this.busy=false;this.frame=0;this.started=performance.now();
-    this.motion=matchMedia('(prefers-reduced-motion: reduce)');
-    this.lastFrame=-Infinity;this.disposed=false;
-    this.tick=time=>{
-      this.frame=0;if(this.disposed)return;
-      if(time-this.lastFrame>=1000/60-1){this.draw(time);this.lastFrame=time;}
-      if(this.busy&&!this.motion.matches&&!document.hidden)this.frame=requestAnimationFrame(this.tick);
+    this.canvas = canvas;
+    this.busy = false;
+    this.complete = false;
+    this.frame = 0;
+    this.started = performance.now();
+    this.lastFrame = -Infinity;
+    this.disposed = false;
+    this.motion = matchMedia('(prefers-reduced-motion: reduce)');
+    this.tick = time => {
+      this.frame = 0;
+      if (this.disposed || document.hidden) return;
+      const interval = this.busy ? 1000 / 60 : 1000 / 20;
+      if (time - this.lastFrame >= interval - 1) {
+        this.draw(time);
+        this.lastFrame = time;
+      }
+      if (!this.motion.matches) this.frame = requestAnimationFrame(this.tick);
     };
-    this.visibility=()=>this.setBusy(this.busy);
-    document.addEventListener('visibilitychange',this.visibility);
-    this.motion.addEventListener('change',this.visibility);
-    this.draw(this.started);
+    this.visibility = () => this.refresh();
+    document.addEventListener('visibilitychange', this.visibility);
+    this.motion.addEventListener('change', this.visibility);
+    this.refresh();
   }
-  setBusy(value) {
-    if(this.disposed)return;
-    if(value&&!this.busy)this.started=performance.now();
-    this.busy=value;
-    // Frequent progress updates must not cancel/reset the animation clock.
-    if(this.busy&&!this.motion.matches&&!document.hidden){
-      if(!this.frame){this.lastFrame=-Infinity;this.frame=requestAnimationFrame(this.tick);}
-    }else{
-      if(this.frame)cancelAnimationFrame(this.frame);
-      this.frame=0;this.draw(performance.now());
-    }
+  setBusy(value, complete = false) {
+    if (this.disposed) return;
+    this.busy = Boolean(value);
+    this.complete = Boolean(complete);
+    // State updates must not reset the animation timeline.
+    this.refresh();
   }
-  pose(time) {
-    const moving=this.busy&&!this.motion.matches;
-    const t=moving?(time-this.started)/1000:0;
-    return {t,moving,x:32+(moving?8*Math.sin(t*.9):0),y:32+(moving?6*Math.sin(t*1.3):0)};
+  refresh() {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    if (this.disposed) return;
+    this.draw(performance.now());
+    if (!this.motion.matches && !document.hidden)
+      this.frame = requestAnimationFrame(this.tick);
   }
   draw(time) {
-    const ctx=this.canvas.getContext('2d');if(!ctx)return;
-    const p=this.pose(time);
-    ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-    ctx.save();ctx.scale(this.canvas.width/64,this.canvas.height/64);
-    // Full robot inside the selected mint capsule; glyphs disappear underneath it.
-    if(p.moving){
-      const letters=['A','ß','é','λ','ñ'];
-      ctx.font='8px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
-      for(let i=0;i<letters.length;i++){
-        const phase=(p.t*.5+i/letters.length)%1,angle=i*1.22+1.7,radius=27-13*phase;
-        ctx.fillStyle=`rgba(148,240,201,${.9*Math.sin(Math.PI*phase)})`;
-        ctx.fillText(letters[i],p.x+Math.cos(angle)*radius,p.y+Math.sin(angle)*radius);
-      }
-    }
-    ctx.translate(p.x,p.y);
-    const radius=17;
-    const brush=(x,y,spin)=>{
-      ctx.save();ctx.translate(x,y);ctx.rotate(spin);
-      ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.4;ctx.lineCap='round';ctx.beginPath();
-      for(let arm=0;arm<3;arm++){
-        const angle=arm*Math.PI*2/3;
-        ctx.moveTo(0,0);ctx.lineTo(Math.cos(angle)*5,Math.sin(angle)*5);
-      }
-      ctx.stroke();ctx.restore();
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+    const reduced = this.motion.matches;
+    const t = reduced ? 0 : (time - this.started) / 1000;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.save();
+    ctx.scale(this.canvas.width / 64, this.canvas.height / 64);
+    // Page motif deliberately has no robotic eyes, wheels or arms.
+    const y = reduced ? 0 : Math.sin(t * 1.35) * .85;
+    ctx.translate(0, y);
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(21, 7);
+      ctx.lineTo(37, 7);
+      ctx.lineTo(45, 15);
+      ctx.lineTo(45, 51);
+      ctx.quadraticCurveTo(45, 56, 40, 56);
+      ctx.lineTo(21, 56);
+      ctx.quadraticCurveTo(17, 56, 17, 52);
+      ctx.lineTo(17, 11);
+      ctx.quadraticCurveTo(17, 7, 21, 7);
+      ctx.closePath();
     };
-    brush(-radius*.72,radius*.7,p.t*6);brush(radius*.72,radius*.7,-p.t*6);
-    const finish=ctx.createLinearGradient(-radius,-radius,radius,radius);
-    finish.addColorStop(0,'#42876e');finish.addColorStop(1,'#173d30');
-    ctx.fillStyle=finish;ctx.strokeStyle='#94f0c9';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.strokeStyle='rgba(148,240,201,.22)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(0,0,radius-3,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle='#94f0c9';ctx.beginPath();ctx.arc(0,0,radius*.25,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.roundRect(-3,-radius*.7,6,2,1);ctx.fill();
-    ctx.beginPath();ctx.arc(-radius*.5,-radius*.45,1.3,0,Math.PI*2);ctx.fill();
+    const glass = ctx.createLinearGradient(17, 7, 45, 56);
+    glass.addColorStop(0, 'rgba(186,255,226,.48)');
+    glass.addColorStop(.5, 'rgba(23,191,145,.18)');
+    glass.addColorStop(1, 'rgba(43,229,173,.53)');
+    path();
+    ctx.fillStyle = glass;
+    ctx.strokeStyle = '#a1f9d4';
+    ctx.lineWidth = 1.1;
+    ctx.fill();
+    ctx.stroke();
+
+    // Folded corner.
+    ctx.beginPath();
+    ctx.moveTo(37, 7);
+    ctx.lineTo(37, 11.5);
+    ctx.quadraticCurveTo(37, 15, 40.5, 15);
+    ctx.lineTo(45, 15);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(210,255,235,.82)';
+    ctx.strokeStyle = '#e2fff1';
+    ctx.lineWidth = .8;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.save();
+    path();
+    ctx.clip();
+    const lift = reduced ? 0 : Math.sin(t * (this.busy ? 4.5 : 2.1)) * 3.2;
+    const shift = reduced ? 0 : Math.sin(t * (this.busy ? 3.6 : 1.6) + 1.1) * 2.5;
+    const ribbon = (offset = 0) => {
+      ctx.beginPath();
+      ctx.moveTo(12, 40 + lift + offset);
+      ctx.bezierCurveTo(26, 15 + shift + offset, 33, 55 - lift + offset, 51, 29 - lift + offset);
+    };
+    ribbon();
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = 'rgba(82,255,194,.15)';
+    ctx.stroke();
+    const stream = ctx.createLinearGradient(16, 25, 50, 47);
+    stream.addColorStop(0, 'rgba(37,196,154,.15)');
+    stream.addColorStop(.4, '#76ffd5');
+    stream.addColorStop(.7, '#e9fff3');
+    stream.addColorStop(1, 'rgba(37,196,154,.15)');
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = stream;
+    ctx.stroke();
+    ribbon(6 - shift * .6);
+    ctx.lineWidth = .95;
+    ctx.strokeStyle = 'rgba(206,255,233,.85)';
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.moveTo(22, 19);
+    ctx.lineTo(30, 19);
+    ctx.moveTo(22, 49);
+    ctx.lineTo(34, 49);
+    ctx.strokeStyle = 'rgba(188,255,222,.50)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (this.complete) {
+      ctx.beginPath();
+      ctx.arc(47, 48, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#0c926d';
+      ctx.strokeStyle = '#adffe0';
+      ctx.lineWidth = 1.2;
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(42, 48);
+      ctx.lineTo(46, 52);
+      ctx.lineTo(53, 44);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
     ctx.restore();
   }
-  dispose(){
-    this.disposed=true;if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;
-    document.removeEventListener('visibilitychange',this.visibility);
-    this.motion.removeEventListener('change',this.visibility);
+  dispose() {
+    this.disposed = true;
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    document.removeEventListener('visibilitychange', this.visibility);
+    this.motion.removeEventListener('change', this.visibility);
   }
 };
