@@ -27,7 +27,7 @@ import UIKit
         VStack(spacing: 14) {
             ZStack {
                 if busy {
-                    TranslationVacuumView()
+                    TranslationCrystalView()
                         .opacity(result.isEmpty ? 0.85 : 0.22)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)

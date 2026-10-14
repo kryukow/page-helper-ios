@@ -31,7 +31,7 @@ struct SettingsView:View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(spacing: 14) {
-                    MintFlowMark(size: 58)
+                    MintCrystalView(animated: busy)
                         .frame(width: 58, height: 58)
                         .background(mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
                     Text("Page Helper")
@@ -58,14 +58,7 @@ struct SettingsView:View {
                     Button("Отключить", role: .destructive) { run { try await logout() } }
                         .font(.subheadline).disabled(busy)
                     }
-                    if busy {
-                        HStack(spacing: 10) {
-                            MintFlowMark(size: 34)
-                            Text("Обрабатываю…").font(.caption).foregroundStyle(mint)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Обработка запроса")
-                    }
+                    if busy { MintCrystalView().frame(height: 82).frame(maxWidth: .infinity).accessibilityLabel("Обработка запроса") }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20).background(card.opacity(0.88), in: RoundedRectangle(cornerRadius: 24))
@@ -133,7 +126,7 @@ struct SettingsView:View {
             }
         }
         .background {
-            AmbientVacuumFloor()
+            AmbientCrystalBackground()
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
