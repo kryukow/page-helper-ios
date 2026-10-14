@@ -10,7 +10,7 @@ settings:
     COMPRESS_PNG_FILES: NO
     TARGETED_DEVICE_FAMILY: '1,2'
     MARKETING_VERSION: '0.3.8'
-    CURRENT_PROJECT_VERSION: '27'
+    CURRENT_PROJECT_VERSION: '28'
 targets:
   PlusTranslate:
     type: application
@@ -36,6 +36,10 @@ targets:
       - Extension
       - Shared
       - path: WebExtension
+        excludes: [icons]
+        buildPhase: resources
+      - path: WebExtension/icons
+        type: folder
         buildPhase: resources
     settings:
       base:
